@@ -1,41 +1,20 @@
+from aioredis import Redis
 import requests
 from datetime import date, datetime
-from fastapi import HTTPException, Query, Request, Path
+from fastapi import Depends, HTTPException, Query, Request, Path
 from typing import List, Optional
 from fastapi import APIRouter
 from hotels_service.dao import HotelDAO
+from hotels_service.db import get_redis
 from hotels_service.exceptions import IncorrectRoleException, WrongDateFrom
 from hotels_service.rooms.dao import RoomDAO
 from hotels_service.rooms.schemas import SRoom, SRoomAdd, SRoomInfo
 from hotels_service.schemas import SHotelAdd, SHotelInfo, SHotels
+from ast import literal_eval
 
 
 router = APIRouter(prefix="/hotels", tags=["Отели"])
 api_router = APIRouter(prefix="/api/hotels", tags=["for others apis"])
-
-# @router.get("/{location}")
-# async def get_hotels(
-#     location: str,
-#     date_from: date = Query(..., description=f"Например, {datetime.now().date()}"),
-#     date_to: date = Query(..., description=f"Например, {datetime.now().date()}",),
-#     services: str = Query("Парковка", description="Вводите услуги через пробел"),
-#     min_check: int = 0,
-#     max_check: int = 100_000,
-#     redis: Redis = Depends(get_redis)
-# ) -> List[SHotelInfo]:
-#     """Получение всех отелей для указанной локации, дат и ценового диапазона."""
-#     if date_from >= date_to:
-#         raise WrongDateFrom
-
-#     result = await redis.get("cache_key")
-
-#     if result is None:  # Если данные отсутствуют в кэше, выполняем запрос и сохраняем результат в Redis
-#         result =  await HotelDAO.find_all_by_location_and_date(
-#         location, date_from, date_to, services, min_check, max_check)
-#         await redis.set("cache_key", str(result), ex=20) # Сохраняем результат в кэше на 20 секунд
-#     else:
-#         result = eval(result)
-#     return result
 
 
 @router.get("/{location}", response_model=List[SHotelInfo],
@@ -48,27 +27,24 @@ async def get_hotels(
     location: str = Path(description="Введите название города или отеля"),
     services: str = Query(default="Парковка", description="Вводите услуги через запятую"),
     min_price: int = 0, max_price: int = 100_000,
+    redis: Redis = Depends(get_redis)
 ):
     """Получение всех отелей для указанной локации, дат, ценового диапазона и услуг"""
     if date_from >= date_to:
         raise WrongDateFrom
-    booked_rooms = requests.get(f'http://127.0.0.1:8002/api/bookings/all/?date_from={date_from}&date_to={date_to}',
-                                headers={'accept':'application/json'})
-    res = await HotelDAO.find_all_by_location_and_date(booked_rooms.json(), location, services, min_price, max_price)
-    return res
     
+    cache_key = f'{location}{date_from}{date_to}{services}{min_price}{max_price}'
+    result = await redis.get(cache_key)
 
-
-#     result = await redis.get("cache_key")
-
-#     if result is None:  # Если данные отсутствуют в кэше, выполняем запрос и сохраняем результат в Redis
-#         result =  await HotelDAO.find_all_by_location_and_date(
-#         location, date_from, date_to, services, min_check, max_check)
-#         await redis.set("cache_key", str(result), ex=20) # Сохраняем результат в кэше на 20 секунд
-#     else:
-#         result = eval(result)
-#     return result
-
+    # Если данные отсутствуют в кэше, выполняем запрос и сохраняем результат в Redis
+    if result is None:
+        booked_rooms = requests.get(f'http://127.0.0.1:8002/api/bookings/all/?date_from={date_from}&date_to={date_to}',
+                            headers={'accept':'application/json'})
+        result = await HotelDAO.find_all_by_location_and_date(booked_rooms.json(), location, services, min_price, max_price)
+        await redis.set(f'{location}{date_from}{date_to}{services}{min_price}{max_price}', str(result), ex=20) # Сохраняем результат в кэше на 20 секунд
+    else:
+        result = literal_eval(result)
+    return result
 
 
 @router.post("/add_hotel")
@@ -128,6 +104,13 @@ async def add_room(room_data: SRoomAdd, request: Request):
 
     return {"detail": f"Комната с ID {new_room_id} была успешно добавлена в БД"}
 
+@api_router.get("/", response_model=List[SHotels],
+                summary="Returns a list of hotels")
+async def get_all_hotels():
+    """Возвращает список всех отелей"""
+    hotels = await HotelDAO.find_all()
+    return hotels
+
 @api_router.get("/rooms", response_model=List[SRoom],
                 summary="Returns a list of rooms")
 async def get_all_rooms():
@@ -146,13 +129,6 @@ async def get_hotel_by_id(hotel_id: int) -> Optional[SHotels]:
     """Вовзращает информацию об отеле по ID.
     Находит запись в БД, не учитывая, есть ли в отеле свободные комнаты или нет"""
     return await HotelDAO.find_one_or_none(id=hotel_id)
-
-
-
-
-
-
-
 
 
 # @router.post("/add-hotels-and-rooms-in-db", summary="Добавление записей в БД")
