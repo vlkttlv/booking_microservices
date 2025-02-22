@@ -1,4 +1,3 @@
-/alembic.ini
-/booking_service
-/hotels_service
+__pycache__
 /venv
+.env
