@@ -1,12 +1,13 @@
+import shutil
 from aioredis import Redis
 import requests
 from datetime import date, datetime
-from fastapi import Depends, HTTPException, Query, Request, Path
+from fastapi import Depends, HTTPException, Query, Request, Path, UploadFile
 from typing import List, Optional
 from fastapi import APIRouter
 from hotels_service.dao import HotelDAO
 from hotels_service.db import get_redis
-from hotels_service.exceptions import IncorrectRoleException, WrongDateFrom
+from hotels_service.exceptions import IncorrectRoleException, RoomNotFound, WrongDateFrom, HotelNotFound
 from hotels_service.rooms.dao import RoomDAO
 from hotels_service.rooms.schemas import SRoom, SRoomAdd, SRoomInfo
 from hotels_service.schemas import SHotelAdd, SHotelInfo, SHotels
@@ -32,16 +33,18 @@ async def get_hotels(
     """Получение всех отелей для указанной локации, дат, ценового диапазона и услуг"""
     if date_from >= date_to:
         raise WrongDateFrom
-    
     cache_key = f'{location}{date_from}{date_to}{services}{min_price}{max_price}'
     result = await redis.get(cache_key)
 
     # Если данные отсутствуют в кэше, выполняем запрос и сохраняем результат в Redis
     if result is None:
         booked_rooms = requests.get(f'http://127.0.0.1:8002/api/bookings/all/?date_from={date_from}&date_to={date_to}',
-                            headers={'accept':'application/json'})
-        result = await HotelDAO.find_all_by_location_and_date(booked_rooms.json(), location, services, min_price, max_price)
-        await redis.set(f'{location}{date_from}{date_to}{services}{min_price}{max_price}', str(result), ex=20) # Сохраняем результат в кэше на 20 секунд
+                            headers={'accept':'application/json'}, timeout=10)
+        result = await HotelDAO.find_all_by_location_and_date(booked_rooms.json(), location,
+                                                              services, min_price, max_price)
+        # Сохраняем результат в кэше на 20 секунд
+        await redis.set(f'{location}{date_from}{date_to}{services}{min_price}{max_price}',
+                        str(result), ex=20)
     else:
         result = literal_eval(result)
     return result
@@ -53,7 +56,7 @@ async def add_hotel(hotel_data: SHotelAdd, request: Request):
 
     access_token = request.cookies.get("booking_access_token")
     headers = {'accept': 'application/json', 'token': access_token}
-    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers)
+    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
     if response.status_code == 401:
         raise HTTPException(status_code=401, detail="Not authorized")
     if response.json()['role'] != 'admin':
@@ -80,8 +83,9 @@ async def get_rooms(hotel_id: int,
                     max_check: int = 100_000):
     """Получение списка свободных комнат в отеле"""
     booked_rooms = requests.get(f'http://127.0.0.1:8002/api/bookings/all/?date_from={date_from}&date_to={date_to}',
-                                headers={'accept':'application/json'})
-    return await RoomDAO.find_all_rooms(booked_rooms.json(), hotel_id, date_from, date_to, min_check, max_check)
+                                headers={'accept':'application/json'}, timeout=10)
+    return await RoomDAO.find_all_rooms(booked_rooms.json(), hotel_id,
+                                        date_from, date_to, min_check, max_check)
 
 
 @router.post("/{hotel_id}/add_room")
@@ -89,12 +93,11 @@ async def add_room(room_data: SRoomAdd, request: Request):
     """Добавление комнаты в БД. Доступно только администраторам"""
     access_token = request.cookies.get("booking_access_token")
     headers = {'accept': 'application/json', 'token': access_token}
-    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers)
+    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
     if response.status_code == 401:
         raise HTTPException(status_code=401, detail="Not authorized")
     if response.json()['role'] != 'admin':
         raise IncorrectRoleException
-    
     new_room_id = await RoomDAO.add(hotel_id=room_data.hotel_id,
                                     name=room_data.name,
                                     description=room_data.description,
@@ -133,7 +136,6 @@ async def get_hotel_by_id(hotel_id: int) -> Optional[SHotels]:
 
 # @router.post("/add-hotels-and-rooms-in-db", summary="Добавление записей в БД")
 # async def add_hotels_and_rooms_in_db():
-    
 #     with open("hotels_service/data/hotels.json", 'r', encoding="utf-8") as file:
 #         hotels_data = json.load(file)  # Загружаем данные из JSON
 #         for hotel in hotels_data:
@@ -141,7 +143,6 @@ async def get_hotel_by_id(hotel_id: int) -> Optional[SHotels]:
 #                                location=hotel['location'],
 #                                services=hotel['services'],
 #                                rooms_quantity=hotel['rooms_quantity'])
-            
 #     with open("hotels_service/data/rooms.json", 'r', encoding="utf-8") as file:
 #         rooms_data = json.load(file)  # Загружаем данные из JSON
 #         for room in rooms_data:
@@ -152,3 +153,55 @@ async def get_hotel_by_id(hotel_id: int) -> Optional[SHotels]:
 #                               services=room['services'],
 #                               quantity=room['quantity'])
 #     return {"detail": 'отели и комнаты были добавлены в БД'}
+
+
+@router.post("/hotels/{hotel_id}")
+async def add_hotel_images(hotel_id: int, file1: UploadFile,
+                           file2: UploadFile, file3: UploadFile,
+                           request: Request):
+    """Загрузка изображений для отеля. Доступно только админам"""
+    access_token = request.cookies.get("booking_access_token")
+    headers = {'accept': 'application/json', 'token': access_token}
+    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
+    if response.status_code == 401:
+        raise HTTPException(status_code=401, detail="Not authorized")
+    if response.json()['role'] != 'admin':
+        raise IncorrectRoleException
+    hotel = await HotelDAO.find_one_or_none(id=hotel_id)
+    if hotel is None:
+        raise HotelNotFound
+
+    files = [file1, file2, file3]
+    for idx, file in enumerate(files):
+        im_path = f"hotels_service/static/images/hotels/{hotel_id}_{idx + 1}.webp"
+        with open(im_path, "wb+") as file_object:
+            shutil.copyfileobj(file.file, file_object)
+
+
+    return {"details": f"Все изображения успешно загружены для отеля с id {hotel_id}"}
+
+
+@router.post("/rooms/{room_id}")
+async def add_rooms_images(room_id: int, file1: UploadFile,
+                           file2: UploadFile, file3: UploadFile,
+                           request: Request):
+    """Загрузка изображений для комнаты. Доступно только администратору"""
+    access_token = request.cookies.get("booking_access_token")
+    headers = {'accept': 'application/json', 'token': access_token}
+    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
+    if response.status_code == 401:
+        raise HTTPException(status_code=401, detail="Not authorized")
+    if response.json()['role'] != 'admin':
+        raise IncorrectRoleException
+
+    room = await RoomDAO.find_one_or_none(id=room_id)
+    if room is None:
+        raise RoomNotFound
+
+    files = [file1, file2, file3]
+    for idx, file in enumerate(files):
+        im_path = f"hotels_service/static/images/rooms/{room_id}_{idx + 1}.webp"
+        with open(im_path, "wb+") as file_object:
+            shutil.copyfileobj(file.file, file_object)
+
+    return {"details": f"Все изображения успешно загружены для комнаты с id {room_id}"}

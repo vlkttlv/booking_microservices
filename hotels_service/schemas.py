@@ -1,5 +1,5 @@
 from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SHotels(BaseModel):
@@ -21,4 +21,4 @@ class SHotelAdd(BaseModel):
     name: str
     location: str
     services: List[str]
-    rooms_quantity: int
+    rooms_quantity: int = Field(ge=1)
