@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, Response
+from typing import Annotated
+from fastapi import APIRouter, Header, Request, Response
 from users_service.auth import authenticate_user, create_access_token, get_password_hash
 from users_service.dao import UsersDAO
 from users_service.dependencies import get_current_user
 from users_service.exceptions import IncorrectEmailOrPasswordException, UserAlreadyExistsException
-from users_service.models import Users
-from users_service.schemas import SUserAuth
+from users_service.schemas import SUserAuth, SUserInfo
 
 
 router = APIRouter(
@@ -31,7 +31,7 @@ async def login_user(response: Response, user_data: SUserAuth):
         raise IncorrectEmailOrPasswordException
     access_token = create_access_token({"sub": str(user.id)})
     response.set_cookie("booking_access_token", access_token, httponly=True)
-    return {"access_token": access_token, "role": user.role}
+    return {"access_token": access_token}
 
 
 @router.post("/logout")
@@ -40,7 +40,10 @@ async def logout_user(response: Response):
     response.delete_cookie("booking_access_token")
 
 
-@router.get("/me")
-async def read_user_me(current_user: Users = Depends(get_current_user)):
+@router.get("/me", response_model=SUserInfo, summary="Returns info about the user")
+async def get_user_info(request: Request, token: Annotated[str | None, Header()] = None):
     """Метод, возвращающий информацию о пользователе(id, email, пароль и роль)"""
-    return current_user
+    if not token:
+        token = request.cookies.get("booking_access_token")
+    current_user = get_current_user(token)
+    return await current_user
