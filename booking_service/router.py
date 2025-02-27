@@ -1,13 +1,15 @@
 from datetime import date, datetime
-from fastapi import APIRouter, HTTPException, Query, Request, HTTPException
-from pydantic import parse_obj_as
-from booking_service.exceptions import IncorrectBookingID, RoomCannotBeBooked
-from booking_service.dao import BookingDAO
+import json
+from typing import Annotated
+import pika
 import requests
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
+from pydantic import parse_obj_as
+from booking_service.exceptions import RoomCannotBeBooked
+from booking_service.dao import BookingDAO
 
-from booking_service.schemas import SBooking, UpdateBooking
-from booking_service.tasks.tasks import send_booking_confirmation_email
-
+from booking_service.utils import check_current_user
+from booking_service.config import settings
 router = APIRouter(prefix="/bookings", tags=["Бронирования"])
 api_router = APIRouter(prefix="/api/bookings", tags=["for others apis"])
 
@@ -22,22 +24,20 @@ async def get_booked_rooms(
 
 
 @router.get("/", summary="Returns all the user's bookings")
-async def get_bookings(request: Request):
+async def get_bookings(current_user = Depends(check_current_user)):
     """Получение всех бронирований пользователя"""
-    access_token = request.cookies.get("booking_access_token")
-    headers = {'accept': 'application/json', 'token': access_token}
-    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers)
-    if user_response.status_code == 401:
-        raise HTTPException(status_code=401, detail="Not authorized")
-    rooms = requests.get('http://127.0.0.1:8001/api/hotels/rooms', headers={'accept':'application/json'})
-    return await BookingDAO.find_all(rooms.json(), user_id=user_response.json()['id'])
+    rooms = requests.get('http://127.0.0.1:8001/api/hotels/rooms',
+                         headers={'accept':'application/json'}, timeout=10)
+    return await BookingDAO.find_all(rooms.json(), user_id=current_user['id'])
 
 @router.get("/{booking_id}", summary="Returns the user's booking by ID")
-async def get_booking(booking_id: int, request: Request):
+async def get_booking(booking_id: int, request: Request,
+                      token: Annotated[str | None, Header()] = None):
     """Получение бронирования пользователя по ID"""
-    access_token = request.cookies.get("booking_access_token")
-    headers = {'accept': 'application/json', 'token': access_token}
-    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers)
+    if token is None:
+        token = request.cookies.get("booking_access_token")
+    headers = {'accept': 'application/json', 'token': token}
+    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
     if user_response.status_code == 401:
         raise HTTPException(status_code=401, detail="Not authorized")
     return await BookingDAO.find_one_or_none(id=booking_id, user_id=user_response.json()['id'])
@@ -52,43 +52,53 @@ async def add_booking(request: Request,
     """Добавление бронирование"""
     access_token = request.cookies.get("booking_access_token")
     headers = {'accept': 'application/json', 'token': access_token}
-    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers)
+    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
     if user_response.status_code == 401:
         raise HTTPException(status_code=401, detail="Not authorized")
-    rooms = requests.get('http://127.0.0.1:8001/api/hotels/rooms', headers={'accept':'application/json'})
-    booking = await BookingDAO.add(rooms.json(), user_response.json()['id'], room_id, date_from, date_to)
+    rooms = requests.get('http://127.0.0.1:8001/api/hotels/rooms',
+                         headers={'accept':'application/json'}, timeout=10)
+    booking = await BookingDAO.add(rooms.json(), user_response.json()['id'],
+                                   room_id, date_from, date_to)
     if not booking:
         raise RoomCannotBeBooked
-    booking_dict = parse_obj_as(SBooking, booking).dict()
-    send_booking_confirmation_email.delay(booking_dict, user_response.json()['email'])
+    booking_dict = {}
+    booking_dict['date_from'] = str(booking.date_from)
+    booking_dict['date_to'] = str(booking.date_to)
+    # send_booking_confirmation_email.delay(booking_dict, user_response.json()['email'])
+    connection = pika.BlockingConnection(pika.ConnectionParameters(settings.RABBITMQ_HOST))
+    channel = connection.channel()
+        # Подготовка сообщения для RabbitMQ
+    message = {
+        "booking": booking_dict,
+        "email": user_response.json()['email']
+    }
+    channel.basic_publish(exchange='', routing_key=settings.QUEUE_NAME, body=json.dumps(message))
+    connection.close()
+    print("Уведомление отправлено в брокер")
+
 
 
 @router.delete("/{booking_id}",  status_code=204)
 async def delete_booking(booking_id: int, request: Request):
     """Удаление брони"""
-    # await PaymentDAO.delete(booking_id=booking_id)
     access_token = request.cookies.get("booking_access_token")
     headers = {'accept': 'application/json', 'token': access_token}
-    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers)
+    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
     if user_response.status_code == 401:
         raise HTTPException(status_code=401, detail="Not authorized")
+    requests.delete(f'http://127.0.0.1:8003/api/payments/{booking_id}', headers=headers, timeout=10)
     await BookingDAO.delete(user_id=user_response.json()['id'], id=booking_id)
 
-# @router.patch("/{booking_id}/pay")
-# async def update_payment_status(booking_id: int, update_booking: UpdateBooking, request: Request):
-#     booking = await BookingDAO.find_by_id(booking_id=booking_id)
-#     access_token = request.cookies.get("booking_access_token")
-#     headers = {'accept': 'application/json', 'token': access_token}
-#     user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers)
-#     if user_response.status_code == 401:
-#         raise HTTPException(status_code=401, detail="Not authorized")
-#     booking = await BookingDAO.find_by_id(booking_id=booking_id, user_id=user_response.json()['id'])
-#     if booking is None:
-#         raise IncorrectBookingID
-#     if update_booking.date_to is not None and update_booking.date_from is not None:
-#         if update_booking.date_from >= update_booking.date_to:
-#             raise ValueError
-#     if update_booking.date_to is not None:
-#         await BookingDAO.update(id=booking_id, date_to=update_booking.date_to)
-#     if update_booking.date_from is not None:
-#         await BookingDAO.update(id=booking_id, date_from=update_booking.date_from)
+
+@api_router.patch("/{booking_id}/update-pay")
+async def update_payment_status(booking_id: int, request: Request,
+                                token: Annotated[str | None, Header()] = None):
+    """Изменение статуса на <pay>"""
+    if token is None:
+        token = request.cookies.get("booking_access_token")
+    headers = {'accept': 'application/json', 'token': token}
+    print(token)
+    user_response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
+    if user_response.status_code == 401:
+        raise HTTPException(status_code=401, detail="Not authorized")
+    await BookingDAO.update(id=booking_id, payment_status='pay')
