@@ -4,9 +4,9 @@ from typing import Annotated
 import pika
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request
-from pydantic import parse_obj_as
 from booking_service.exceptions import RoomCannotBeBooked
 from booking_service.dao import BookingDAO
+from logger import logger
 
 from booking_service.utils import check_current_user
 from booking_service.config import settings
@@ -74,7 +74,7 @@ async def add_booking(request: Request,
     }
     channel.basic_publish(exchange='', routing_key=settings.QUEUE_NAME, body=json.dumps(message))
     connection.close()
-    print("Уведомление отправлено в брокер")
+    logger.info("Отель забронирован")
 
 
 
