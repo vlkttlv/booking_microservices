@@ -30,9 +30,12 @@
    uvicorn booking_service.main:app --reload --port 8002
    ```
    ```bash
-   uvicorn pay_service.main:app --reload --port 8003
+   uvicorn payment_service.main:app --reload --port 8003
    ```
 7. Запустите rabbit:
    ```bash
-   python -m rabbit.rabbit
+   python -m rabbit.booking_rabbit
+   ```
+   ```bash
+   python -m rabbit.pay_rabbit
    ```
