@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     SMTP_USER: str
     SMTP_PASS: str
     
-    RABBITMQ_URL: str
-    QUEUE_NAME: str
+    BOOKING_QUEUE_NAME: str
+    PAY_QUEUE_NAME: str
     RABBITMQ_HOST: str
     RABBITMQ_PORT: int
 
