@@ -5,7 +5,7 @@ from users_service.dao import UsersDAO
 from users_service.dependencies import get_current_user
 from users_service.exceptions import IncorrectEmailOrPasswordException, UserAlreadyExistsException
 from users_service.schemas import SUserAuth, SUserInfo
-
+from logger import logger
 
 router = APIRouter(
     prefix="/auth",
@@ -21,6 +21,7 @@ async def register_user(user_data: SUserAuth):
         raise UserAlreadyExistsException
     hashed_password = get_password_hash(user_data.password)
     await UsersDAO.add(email=user_data.email, hashed_password=hashed_password)
+    logger.info("Пользователь зарегистрировался")
 
 
 @router.post("/login")
@@ -31,6 +32,7 @@ async def login_user(response: Response, user_data: SUserAuth):
         raise IncorrectEmailOrPasswordException
     access_token = create_access_token({"sub": str(user.id)})
     response.set_cookie("booking_access_token", access_token, httponly=True)
+    logger.info(f"Пользователь {user.id} вошел в систему")
     return {"access_token": access_token}
 
 
