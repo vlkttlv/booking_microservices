@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from hotels_service.router import router as hotels_router
 from hotels_service.router import api_router as api_hotels_router
+from hotels_service.router import db_router as db_hotels_router
 
 app = FastAPI(title="Hotels microservice")
 
@@ -17,5 +18,6 @@ app.add_middleware(
 
 app.include_router(hotels_router)
 app.include_router(api_hotels_router)
+app.include_router(db_hotels_router)
 
 app.mount("/static", StaticFiles(directory="hotels_service/static"), "static")

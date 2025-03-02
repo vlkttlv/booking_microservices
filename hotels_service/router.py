@@ -1,3 +1,4 @@
+import json
 import shutil
 from aioredis import Redis
 import requests
@@ -16,7 +17,7 @@ from ast import literal_eval
 
 router = APIRouter(prefix="/hotels", tags=["Отели"])
 api_router = APIRouter(prefix="/api/hotels", tags=["for others apis"])
-
+db_router = APIRouter(prefix="/db/add")
 
 @router.get("/{location}", response_model=List[SHotelInfo],
             summary="Return hotels for specified params")
@@ -134,25 +135,25 @@ async def get_hotel_by_id(hotel_id: int) -> Optional[SHotels]:
     return await HotelDAO.find_one_or_none(id=hotel_id)
 
 
-# @router.post("/add-hotels-and-rooms-in-db", summary="Добавление записей в БД")
-# async def add_hotels_and_rooms_in_db():
-#     with open("hotels_service/data/hotels.json", 'r', encoding="utf-8") as file:
-#         hotels_data = json.load(file)  # Загружаем данные из JSON
-#         for hotel in hotels_data:
-#             await HotelDAO.add(name=hotel['name'],
-#                                location=hotel['location'],
-#                                services=hotel['services'],
-#                                rooms_quantity=hotel['rooms_quantity'])
-#     with open("hotels_service/data/rooms.json", 'r', encoding="utf-8") as file:
-#         rooms_data = json.load(file)  # Загружаем данные из JSON
-#         for room in rooms_data:
-#             await RoomDAO.add(hotel_id=room['hotel_id'],
-#                               name=room['name'],
-#                               description=room['description'],
-#                               price=room['price'],
-#                               services=room['services'],
-#                               quantity=room['quantity'])
-#     return {"detail": 'отели и комнаты были добавлены в БД'}
+@db_router.post("/add-hotels-and-rooms-in-db", summary="Добавление записей в БД")
+async def add_hotels_and_rooms_in_db():
+    with open("hotels_service/data/hotels.json", 'r', encoding="utf-8") as file:
+        hotels_data = json.load(file)  # Загружаем данные из JSON
+        for hotel in hotels_data:
+            await HotelDAO.add(name=hotel['name'],
+                               location=hotel['location'],
+                               services=hotel['services'],
+                               rooms_quantity=hotel['rooms_quantity'])
+    with open("hotels_service/data/rooms.json", 'r', encoding="utf-8") as file:
+        rooms_data = json.load(file)  # Загружаем данные из JSON
+        for room in rooms_data:
+            await RoomDAO.add(hotel_id=room['hotel_id'],
+                              name=room['name'],
+                              description=room['description'],
+                              price=room['price'],
+                              services=room['services'],
+                              quantity=room['quantity'])
+    return {"detail": 'отели и комнаты были добавлены в БД'}
 
 
 @router.post("/hotels/{hotel_id}")
