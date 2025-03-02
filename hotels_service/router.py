@@ -1,18 +1,15 @@
 import json
 import shutil
-from aioredis import Redis
 import requests
 from datetime import date, datetime
-from fastapi import Depends, HTTPException, Query, Request, Path, UploadFile
+from fastapi import HTTPException, Query, Request, Path, UploadFile
 from typing import List, Optional
 from fastapi import APIRouter
 from hotels_service.dao import HotelDAO
-from hotels_service.db import get_redis
 from hotels_service.exceptions import IncorrectRoleException, RoomNotFound, WrongDateFrom, HotelNotFound
 from hotels_service.rooms.dao import RoomDAO
 from hotels_service.rooms.schemas import SRoom, SRoomAdd, SRoomInfo
 from hotels_service.schemas import SHotelAdd, SHotelInfo, SHotels
-from ast import literal_eval
 
 
 router = APIRouter(prefix="/hotels", tags=["Отели"])
@@ -29,25 +26,16 @@ async def get_hotels(
     location: str = Path(description="Введите название города или отеля"),
     services: str = Query(default="Парковка", description="Вводите услуги через запятую"),
     min_price: int = 0, max_price: int = 100_000,
-    redis: Redis = Depends(get_redis)
 ):
     """Получение всех отелей для указанной локации, дат, ценового диапазона и услуг"""
     if date_from >= date_to:
         raise WrongDateFrom
-    cache_key = f'{location}{date_from}{date_to}{services}{min_price}{max_price}'
-    result = await redis.get(cache_key)
 
-    # Если данные отсутствуют в кэше, выполняем запрос и сохраняем результат в Redis
-    if result is None:
-        booked_rooms = requests.get(f'http://127.0.0.1:8002/api/bookings/all/?date_from={date_from}&date_to={date_to}',
-                            headers={'accept':'application/json'}, timeout=10)
-        result = await HotelDAO.find_all_by_location_and_date(booked_rooms.json(), location,
-                                                              services, min_price, max_price)
-        # Сохраняем результат в кэше на 20 секунд
-        await redis.set(f'{location}{date_from}{date_to}{services}{min_price}{max_price}',
-                        str(result), ex=20)
-    else:
-        result = literal_eval(result)
+    booked_rooms = requests.get(f'http://127.0.0.1:8002/api/bookings/all/?date_from={date_from}&date_to={date_to}',
+                        headers={'accept':'application/json'}, timeout=10)
+    result = await HotelDAO.find_all_by_location_and_date(booked_rooms.json(), location,
+                                                            services, min_price, max_price)
+
     return result
 
 
