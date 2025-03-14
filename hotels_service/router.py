@@ -1,15 +1,16 @@
 import json
 import shutil
-import requests
 from datetime import date, datetime
-from fastapi import HTTPException, Query, Request, Path, UploadFile
 from typing import List, Optional
+import requests
+from fastapi import Depends, Query, Path, UploadFile
 from fastapi import APIRouter
 from hotels_service.dao import HotelDAO
-from hotels_service.exceptions import IncorrectRoleException, RoomNotFound, WrongDateFrom, HotelNotFound
+from hotels_service.exceptions import RoomNotFound, WrongDateFrom, HotelNotFound
 from hotels_service.rooms.dao import RoomDAO
 from hotels_service.rooms.schemas import SRoom, SRoomAdd, SRoomInfo
 from hotels_service.schemas import SHotelAdd, SHotelInfo, SHotels
+from hotels_service.service import check_role
 
 
 router = APIRouter(prefix="/hotels", tags=["Отели"])
@@ -39,17 +40,9 @@ async def get_hotels(
     return result
 
 
-@router.post("/add_hotel")
-async def add_hotel(hotel_data: SHotelAdd, request: Request):
+@router.post("/add_hotel", dependencies=[Depends(check_role)])
+async def add_hotel(hotel_data: SHotelAdd):
     """Добавление отеля. Доступно только администраторам"""
-
-    access_token = request.cookies.get("booking_access_token")
-    headers = {'accept': 'application/json', 'token': access_token}
-    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
-    if response.status_code == 401:
-        raise HTTPException(status_code=401, detail="Not authorized")
-    if response.json()['role'] != 'admin':
-        raise IncorrectRoleException
 
     new_hotel_id = await HotelDAO.add(
         name=hotel_data.name,
@@ -77,16 +70,10 @@ async def get_rooms(hotel_id: int,
                                         date_from, date_to, min_check, max_check)
 
 
-@router.post("/{hotel_id}/add_room")
-async def add_room(room_data: SRoomAdd, request: Request):
+@router.post("/{hotel_id}/add_room", dependencies=[Depends(check_role)])
+async def add_room(room_data: SRoomAdd):
     """Добавление комнаты в БД. Доступно только администраторам"""
-    access_token = request.cookies.get("booking_access_token")
-    headers = {'accept': 'application/json', 'token': access_token}
-    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
-    if response.status_code == 401:
-        raise HTTPException(status_code=401, detail="Not authorized")
-    if response.json()['role'] != 'admin':
-        raise IncorrectRoleException
+
     new_room_id = await RoomDAO.add(hotel_id=room_data.hotel_id,
                                     name=room_data.name,
                                     description=room_data.description,
@@ -144,18 +131,11 @@ async def add_hotels_and_rooms_in_db():
     return {"detail": 'отели и комнаты были добавлены в БД'}
 
 
-@router.post("/hotels/{hotel_id}")
+@router.post("/hotels/{hotel_id}", dependencies=[Depends(check_role)])
 async def add_hotel_images(hotel_id: int, file1: UploadFile,
-                           file2: UploadFile, file3: UploadFile,
-                           request: Request):
+                           file2: UploadFile, file3: UploadFile):
     """Загрузка изображений для отеля. Доступно только админам"""
-    access_token = request.cookies.get("booking_access_token")
-    headers = {'accept': 'application/json', 'token': access_token}
-    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
-    if response.status_code == 401:
-        raise HTTPException(status_code=401, detail="Not authorized")
-    if response.json()['role'] != 'admin':
-        raise IncorrectRoleException
+
     hotel = await HotelDAO.find_one_or_none(id=hotel_id)
     if hotel is None:
         raise HotelNotFound
@@ -170,18 +150,10 @@ async def add_hotel_images(hotel_id: int, file1: UploadFile,
     return {"details": f"Все изображения успешно загружены для отеля с id {hotel_id}"}
 
 
-@router.post("/rooms/{room_id}")
+@router.post("/rooms/{room_id}", dependencies=[Depends(check_role)])
 async def add_rooms_images(room_id: int, file1: UploadFile,
-                           file2: UploadFile, file3: UploadFile,
-                           request: Request):
+                           file2: UploadFile, file3: UploadFile):
     """Загрузка изображений для комнаты. Доступно только администратору"""
-    access_token = request.cookies.get("booking_access_token")
-    headers = {'accept': 'application/json', 'token': access_token}
-    response = requests.get('http://127.0.0.1:8000/auth/me', headers=headers, timeout=10)
-    if response.status_code == 401:
-        raise HTTPException(status_code=401, detail="Not authorized")
-    if response.json()['role'] != 'admin':
-        raise IncorrectRoleException
 
     room = await RoomDAO.find_one_or_none(id=room_id)
     if room is None:

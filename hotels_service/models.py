@@ -1,6 +1,5 @@
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.orm import relationship
 from hotels_service.db import Base
 
 
@@ -13,4 +12,3 @@ class Hotels(Base):
     location = Column(String, nullable=False)
     services = Column(ARRAY(String))
     rooms_quantity = Column(Integer, nullable=False)
-
