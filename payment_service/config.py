@@ -1,14 +1,7 @@
-from typing import Literal
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    MODE: Literal["DEV", 'TEST', 'PROD']
-    LOG_LEVEL: str
-    SMTP_HOST: str
-    SMTP_PORT: int
-    SMTP_USER: str
-    SMTP_PASS: str
 
     DB_HOST: str
     DB_PORT: int
@@ -22,6 +15,10 @@ class Settings(BaseSettings):
     STRIPE_PUBLISHABLE_KEY: str
     STRIPE_SECRET_KEY: str
 
+    RABBITMQ_HOST: str
+    RABBITMQ_PORT: int
+    PAY_QUEUE_NAME: str
+    
     @property
     def DATABASE_URL(self):
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
