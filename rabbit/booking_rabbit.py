@@ -13,7 +13,7 @@ def callback(ch, method, properties, body):
 
 
 connection = pika.BlockingConnection(pika.ConnectionParameters(host=settings.RABBITMQ_HOST))
-channel = connection.channel()
+channel = connection.channel() # канал для обмена сообщениями
 channel.queue_declare(queue=settings.BOOKING_QUEUE_NAME)
 channel.basic_consume(queue=settings.BOOKING_QUEUE_NAME, on_message_callback=callback)
 logger.info("Брокер ожидает сообщений (о бронях)")
