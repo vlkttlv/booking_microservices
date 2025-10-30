@@ -1,3 +1,11 @@
+from dotenv import load_dotenv
+import os, sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+
+
+
 import asyncio
 from logging.config import fileConfig
 
@@ -7,9 +15,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-from db import Base
-from config import settings
-from models import Users
+from users_service.db import Base
+from users_service.config import settings
+from users_service.models import Users
 
 config = context.config
 
