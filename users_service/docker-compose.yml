@@ -1,0 +1,26 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: users_db
+    env_file:
+      - ./.env
+    ports:
+      - "5433:5432"
+    volumes:
+      - users_data:/var/lib/postgresql/data
+
+  users_service:
+    build:
+      context: ./users_service
+      dockerfile: Dockerfile
+    container_name: users_service
+    env_file:
+      - ./users_service/.env
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+volumes:
+  users_data:
