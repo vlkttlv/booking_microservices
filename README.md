@@ -50,3 +50,18 @@
    ```bash
    python -m rabbit.pay_rabbit
    ```
+
+----
+Запуск микросервиса users_service в контейнере в рамках лабораторной работы:
+```bash
+docker-compose up --build
+```
+Для выполнения миграций БД:
+```bash
+docker-compose exec users_service bash
+export PYTHONPATH=/app
+cd users_service
+alembic revision --autogenerate
+alembic upgrade head
+exit
+```
