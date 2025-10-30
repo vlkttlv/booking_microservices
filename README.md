@@ -63,14 +63,9 @@ DB_PORT=
 В директории users_service создайте файл .env (пример лежит в .env_example)
 Запустите контейнер:
 ```bash
-docker-compose up --build
+docker-compose up -d --build
 ```
-Для выполнения миграций БД:
+Теперь микросервис доступен под адресу:
 ```bash
-docker-compose exec users_service bash
-export PYTHONPATH=/app
-cd users_service
-alembic revision --autogenerate
-alembic upgrade head
-exit
+http://localhost:8000/docs
 ```
