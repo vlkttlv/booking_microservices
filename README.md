@@ -52,7 +52,16 @@
    ```
 
 ----
-Запуск микросервиса users_service в контейнере в рамках лабораторной работы:
+## Запуск микросервиса users_service в контейнере в рамках лабораторной работы:
+В корне проекта создайте файл .env:
+```bash
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+DB_PORT=
+```
+В директории users_service создайте файл .env (пример лежит в .env_example)
+Запустите контейнер:
 ```bash
 docker-compose up --build
 ```
