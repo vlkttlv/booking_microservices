@@ -17,7 +17,7 @@ from alembic import context
 
 from users_service.db import Base
 from users_service.config import settings
-from users_service.models import Users
+from users_service.models import Users, RefreshToken
 
 config = context.config
 
